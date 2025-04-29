@@ -24,6 +24,7 @@ class AgentState(TypedDict):
     messages: Annotated[List[HumanMessage | AIMessage], "The messages in the conversation"]
     context: Annotated[str, "The retrieved context"]
     response: Annotated[str, "The generated response"]
+    metrics: Annotated[Dict, "The RAGAS metrics"]
     next: str
 
 # Initialize components
@@ -76,10 +77,25 @@ def retrieve(state: AgentState) -> Dict:
             raise ValueError("No valid context could be retrieved")
             
         logger.info(f"Retrieved context length: {len(context)} characters")
-        return {"context": context, "next": "generate"}
+        return {
+            "context": context,
+            "metrics": {},  # Initialize empty metrics
+            "next": "generate"
+        }
     except Exception as e:
         logger.error(f"Error in retrieval: {str(e)}")
-        return {"context": "", "next": "generate"}
+        return {
+            "context": "",
+            "metrics": {
+                "error": str(e),
+                "faithfulness": 0.0,
+                "answer_relevancy": 0.0,
+                "context_precision": 0.0,
+                "context_recall": 0.0,
+                "answer_correctness": 0.0
+            },
+            "next": "generate"
+        }
 
 # Define the generation function
 def generate(state: AgentState) -> Dict:
@@ -91,7 +107,14 @@ def generate(state: AgentState) -> Dict:
             logger.warning("Empty context in generation step")
             return {
                 "response": "I apologize, but I couldn't find any relevant information in the knowledge base to answer your question. Please try rephrasing your question or upload more relevant documents.",
-                "metrics": {},  # Add empty metrics
+                "metrics": {
+                    "faithfulness": 0.0,
+                    "answer_relevancy": 0.0,
+                    "context_precision": 0.0,
+                    "context_recall": 0.0,
+                    "answer_correctness": 0.0,
+                    "note": "No context available for evaluation"
+                },
                 "next": "evaluate"
             }
         
@@ -123,6 +146,7 @@ def generate(state: AgentState) -> Dict:
         
         # Calculate metrics directly in generate
         try:
+            logger.info("Creating dataset for metrics calculation")
             dataset = Dataset.from_dict({
                 "question": [messages[-1].content],
                 "contexts": [[context]],
@@ -130,6 +154,7 @@ def generate(state: AgentState) -> Dict:
                 "ground_truth": [context]
             })
             
+            logger.info("Calculating RAGAS metrics")
             metrics_dict = {}
             result = evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_precision, context_recall, answer_correctness])
             
@@ -139,21 +164,35 @@ def generate(state: AgentState) -> Dict:
             metrics_dict["context_recall"] = float(np.mean(result["context_recall"]))
             metrics_dict["answer_correctness"] = float(np.mean(result["answer_correctness"]))
             
-            logger.info(f"Metrics calculated: {metrics_dict}")
+            logger.info(f"RAGAS metrics calculated: {metrics_dict}")
         except Exception as e:
             logger.error(f"Error calculating metrics: {str(e)}")
-            metrics_dict = {}
+            metrics_dict = {
+                "error": str(e),
+                "faithfulness": 0.0,
+                "answer_relevancy": 0.0,
+                "context_precision": 0.0,
+                "context_recall": 0.0,
+                "answer_correctness": 0.0
+            }
         
         return {
             "response": response,
-            "metrics": metrics_dict,  # Include metrics in the response
+            "metrics": metrics_dict,
             "next": "evaluate"
         }
     except Exception as e:
         logger.error(f"Error in generation: {str(e)}")
         return {
             "response": "I apologize, but I encountered an error while generating a response. Please try again.",
-            "metrics": {},  # Add empty metrics
+            "metrics": {
+                "error": str(e),
+                "faithfulness": 0.0,
+                "answer_relevancy": 0.0,
+                "context_precision": 0.0,
+                "context_recall": 0.0,
+                "answer_correctness": 0.0
+            },
             "next": "evaluate"
         }
 
@@ -172,23 +211,33 @@ def evaluate_rag(state: AgentState) -> Dict:
         logger.info(f"Context preview: {context[:200]}...")
         logger.info(f"Response preview: {response[:200]}...")
         
+        # Check if metrics are already in state
+        if "metrics" in state:
+            logger.info(f"Metrics found in state: {state['metrics']}")
+            return {"context": context, "response": response, "metrics": state["metrics"], "next": END}
+        
         # Validate inputs
         if not context.strip():
             logger.error("Empty context detected")
-            return {"context": context, "response": response, "metrics": {}, "next": END}
+            return {"context": context, "response": response, "metrics": {
+                "faithfulness": 0.0,
+                "answer_relevancy": 0.0,
+                "context_precision": 0.0,
+                "context_recall": 0.0,
+                "answer_correctness": 0.0,
+                "note": "Empty context"
+            }, "next": END}
             
         if not response.strip():
             logger.error("Empty response detected")
-            return {"context": context, "response": response, "metrics": {}, "next": END}
-        
-        # Check for minimum content requirements
-        if len(context) < 50:
-            logger.error(f"Context too short: {len(context)} characters")
-            return {"context": context, "response": response, "metrics": {}, "next": END}
-            
-        if len(response) < 20:
-            logger.error(f"Response too short: {len(response)} characters")
-            return {"context": context, "response": response, "metrics": {}, "next": END}
+            return {"context": context, "response": response, "metrics": {
+                "faithfulness": 0.0,
+                "answer_relevancy": 0.0,
+                "context_precision": 0.0,
+                "context_recall": 0.0,
+                "answer_correctness": 0.0,
+                "note": "Empty response"
+            }, "next": END}
         
         logger.info("Creating evaluation dataset...")
         try:
@@ -251,12 +300,26 @@ def evaluate_rag(state: AgentState) -> Dict:
         except Exception as eval_error:
             logger.error(f"Error during RAGAS evaluation: {str(eval_error)}")
             logger.error(f"Error type: {type(eval_error)}")
-            return {"context": context, "response": response, "metrics": {}, "next": END}
+            return {"context": context, "response": response, "metrics": {
+                "faithfulness": 0.0,
+                "answer_relevancy": 0.0,
+                "context_precision": 0.0,
+                "context_recall": 0.0,
+                "answer_correctness": 0.0,
+                "error": str(eval_error)
+            }, "next": END}
             
     except Exception as e:
         logger.error(f"Error in RAGAS evaluation: {str(e)}")
         logger.error(f"Error type: {type(e)}")
-        return {"context": context, "response": response, "metrics": {}, "next": END}
+        return {"context": context, "response": response, "metrics": {
+            "faithfulness": 0.0,
+            "answer_relevancy": 0.0,
+            "context_precision": 0.0,
+            "context_recall": 0.0,
+            "answer_correctness": 0.0,
+            "error": str(e)
+        }, "next": END}
 
 # Create the workflow
 def create_rag_graph():

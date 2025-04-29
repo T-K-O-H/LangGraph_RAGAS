@@ -16,6 +16,12 @@ from langchain_openai import OpenAIEmbeddings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Create a string buffer to capture logs
+log_stream = io.StringIO()
+handler = logging.StreamHandler(log_stream)
+handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
+
 load_dotenv()
 
 # Set page config
@@ -179,8 +185,24 @@ if st.button("Submit") or question != default_question:
                 
                 # Display the response and metrics
                 st.markdown(result["response"])
-                st.write("Full Response Data:")
-                st.json(result)
+                
+                # Display the raw metrics dictionary
+                if "metrics" in result and result["metrics"]:
+                    st.markdown("---")  # Add a separator
+                    st.subheader("RAGAS Metrics")
+                    st.write("Raw metrics dictionary:")
+                    st.json(result["metrics"])
+                    
+                    # Display the metrics calculation log
+                    metrics_log = log_stream.getvalue()
+                    if "RAGAS metrics calculated" in metrics_log:
+                        st.markdown("---")
+                        st.subheader("Metrics Calculation Log")
+                        st.code(metrics_log.split("RAGAS metrics calculated:")[-1].strip())
+                else:
+                    st.warning("No metrics available for this response")
+                    st.write("Debug - Full result dictionary:")
+                    st.json(result)
                 
                 # Add assistant response to chat history
                 st.session_state.messages.append({
