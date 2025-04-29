@@ -105,35 +105,39 @@ def extract_text_from_pdf(pdf_file):
 # Sidebar for document upload
 with st.sidebar:
     st.header("Document Management")
-    uploaded_file = st.file_uploader("Upload a document", type=["txt", "pdf"])
+    uploaded_file = st.file_uploader("Upload a document (max 10MB)", type=["txt", "pdf"])
     if uploaded_file:
         try:
-            logger.info(f"Processing uploaded file: {uploaded_file.name}")
-            # Process the document based on file type
-            if uploaded_file.type == "application/pdf":
-                text = extract_text_from_pdf(uploaded_file)
+            # Check file size (10MB = 10 * 1024 * 1024 bytes)
+            if uploaded_file.size > 10 * 1024 * 1024:
+                st.error("File size exceeds 10MB limit. Please upload a smaller file.")
             else:
-                # For text files, detect encoding
-                raw_data = uploaded_file.getvalue()
-                result = chardet.detect(raw_data)
-                encoding = result['encoding']
-                text = raw_data.decode(encoding)
-            
-            if not text.strip():
-                raise ValueError("No text content found in the document")
-            
-            # Process text into semantic chunks
-            chunks = process_text(text)
-            
-            if not chunks:
-                raise ValueError("No valid text chunks could be created from the document")
-            
-            # Add to vectorstore
-            logger.info(f"Adding {len(chunks)} chunks to vectorstore")
-            vectorstore.add_texts(chunks)
-            
-            st.success("Document processed and added to the knowledge base!")
-            st.info(f"Processed {len(chunks)} chunks of text")
+                logger.info(f"Processing uploaded file: {uploaded_file.name}")
+                # Process the document based on file type
+                if uploaded_file.type == "application/pdf":
+                    text = extract_text_from_pdf(uploaded_file)
+                else:
+                    # For text files, detect encoding
+                    raw_data = uploaded_file.getvalue()
+                    result = chardet.detect(raw_data)
+                    encoding = result['encoding']
+                    text = raw_data.decode(encoding)
+                
+                if not text.strip():
+                    raise ValueError("No text content found in the document")
+                
+                # Process text into semantic chunks
+                chunks = process_text(text)
+                
+                if not chunks:
+                    raise ValueError("No valid text chunks could be created from the document")
+                
+                # Add to vectorstore
+                logger.info(f"Adding {len(chunks)} chunks to vectorstore")
+                vectorstore.add_texts(chunks)
+                
+                st.success("Document processed and added to the knowledge base!")
+                st.info(f"Processed {len(chunks)} chunks of text")
         except Exception as e:
             logger.error(f"Error processing document: {str(e)}")
             st.error(f"Error processing document: {str(e)}")
