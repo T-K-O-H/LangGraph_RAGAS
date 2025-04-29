@@ -1,3 +1,14 @@
+---
+title: LangGraph RAG + RAGAS
+emoji: 🤖
+colorFrom: blue
+colorTo: indigo
+sdk: streamlit
+sdk_version: 1.31.1
+app_file: app.py
+pinned: false
+---
+
 # LangGraph RAG + RAGAS
 
 Built this RAG system to experiment with LangGraph's workflow capabilities and RAGAS metrics. It's a straightforward implementation that lets you upload docs, ask questions, and get quality metrics for each response.
